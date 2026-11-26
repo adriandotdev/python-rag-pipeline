@@ -16,6 +16,32 @@ client, embedder, collection = app_config(api_key=api_key)
 
 setup_chat_page_header()
 
+MAX_HISTORY = 6
+
+def condense_question(question):
+    history = st.session_state.messages[-MAX_HISTORY:]
+    
+    if not history:
+        return question
+    
+    transcript = "\n".join(f"{m['role']}: {m['content']}" for m in history)
+
+    response = client.chat.completions.create(
+        model=ai_model,
+        temperature=0,
+        messages=[
+            {"role": "system", "content": (
+                "Rewrite the latest question as a standalone question, using the "
+                "conversation to resolve words like 'it', 'that' or 'them'. "
+                "If it is already standalone or changes the topic, return it unchanged. "
+                "Do not answer it. Return only the question."
+            )},
+            {"role": "user", "content": f"Conversation:\n{transcript}\n\nLatest question: {question}"},
+        ],
+    )
+    return (response.choices[0].message.content or "").strip() or question
+    
+    
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
@@ -26,7 +52,11 @@ for message in st.session_state.messages:
 if question := st.chat_input("Ask about company policy: "):
     st.chat_message("user").write(question)
     
-    question_embedding = embedder.encode([question])
+    history = st.session_state.messages[-MAX_HISTORY:]
+    
+    condensed_question = condense_question(question)
+    
+    question_embedding = embedder.encode([condensed_question])
     
     results = collection.query(
         query_embeddings=question_embedding.tolist(),
@@ -47,7 +77,7 @@ if question := st.chat_input("Ask about company policy: "):
         - Based on the context...
         - Based on the PDF document...
     """
-    user_prompt = f"Context:\n{context}\n\nQuestion: {question}"
+    user_prompt = f"Context:\n{context}\n\nQuestion: {condensed_question}"
         
     with st.spinner("Thinking..."):
         try:
@@ -55,6 +85,7 @@ if question := st.chat_input("Ask about company policy: "):
                     model=ai_model,
                     messages=[
                         {"role": "system", "content": system_prompt + response_guideline},
+                        *history,
                         {"role": "user", "content": user_prompt},
                     ],
                 )
