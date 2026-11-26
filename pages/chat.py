@@ -98,5 +98,3 @@ if question := st.chat_input("Ask about company policy: "):
     # Append two messages
     st.session_state.messages.append({"role": "user", "content": question})
     st.session_state.messages.append({"role": "assistant", "content": answer})
-        
-    
